@@ -1,0 +1,112 @@
+---
+title: "A Machine Model for Predicting Barbell Lifts"
+author: "Shep Smithline"
+date: "July 14, 2014"
+output: html_document
+---
+
+### I. Introduction
+
+In this paper we decribe the use of the use of the random forest model to predict barbell lifts. The random forest model is an example of a tree based classicification method.  In a tree based classicfication method, the space spanned by the individual predictors is divided into discrete regions represented by nodes (or leaves) which in turn are subdivided into other regions.  Eventually, this process comes to halt and a response is predicted based on the the most commonly occurring class of training obseravations that occurs in the node. Our results show that the rndom forest model can be used to make accurate predictions on the whethe the barbell lifts are done correctly.
+
+### II. Data Selection and Model Building
+
+We read the data in 
+
+```{r, cache=TRUE}
+training<-read.csv("pml-training.csv")
+```
+
+And after looking at the data, a large number of columns had "NAs" or "DIV/0!" which make them nonsuitable for prediction.  In addition, a number of columns clearly contain irrelvant data (eg user names) so we decided to restrict ourselves to a subset of the data:
+
+"num_window"          "roll_belt"           "pitch_belt"          "yaw_belt"           "total_accel_belt"    "gyros_belt_x"        "gyros_belt_y"        "gyros_belt_z"        "accel_belt_x"       "accel_belt_y"        "accel_belt_z"        "magnet_belt_x"       "magnet_belt_y"       "magnet_belt_z"      "roll_arm"          
+"pitch_arm"           "yaw_arm"             "total_accel_arm"     "gyros_arm_x"        "gyros_arm_y"       
+"gyros_arm_z"         "accel_arm_x"         "accel_arm_y"         "accel_arm_z"        "magnet_arm_x"        "magnet_arm_y"        "magnet_arm_z"        "roll_dumbbell"       "pitch_dumbbell"     "yaw_dumbbell"       
+"gyros_dumbbell_x"    "gyros_dumbbell_y"    "gyros_dumbbell_z"    "accel_dumbbell_x"   "accel_dumbbell_y"    "accel_dumbbell_z"    "magnet_dumbbell_x"   "magnet_dumbbell_y"   "magnet_dumbbell_z"  "roll_forearm"        "pitch_forearm"       "yaw_forearm"         "total_accel_forearm" "gyros_forearm_x"     "gyros_forearm_y"    
+"gyros_forearm_z"     "accel_forearm_x"     "accel_forearm_y"     "accel_forearm_z"     "magnet_forearm_x"    "magnet_forearm_y"    "magnet_forearm_z"    "classe"
+
+
+
+```{r, cache=TRUE}
+trainingFiltered<-training[c(7,8,9,10,11,37,38,39,40,41,42,43,44,45,46,47,48,49,60,61,62,63,64,65,66,67,68,84,85,86,113,114,115,116,117,118,119,120,121,122,123,124,140,151,152,153,154,155,156,157,158,159,160)]
+```
+
+It is now straight forward to build our model with the randomForest algorithm. Notice when we create out model below we set mtry to 6 indicating the number of variables randomly sampled as candidates at each split in th tree and importance is set to TRUE indicating the importance of the various predictors should be assesed
+
+
+```{r}
+set.seed(1)
+library(randomForest)
+rfMod<-randomForest(classe~.,data=trainingFiltered,mtry=6,importance=TRUE,proximity=TRUE)
+```
+
+
+### III. Error Estimation
+
+An important part of validationg one's model is to estimate the test error without actually running it on the test data. The essential idea is hold out a subset of the training is the model fitting process and use this data to estimate the test error rate. In the random forest approach instead of explicitly using cross-validation to  estimate the test error, one takes advantage of bootstrapping (James et al p. 317)  With bootstrappng, one gets "b" predictions which are then averaged. Further, since each bootstrapped sample uses about 2/3's of the observations, the remaining one third of the oberservations (the so called "out of bag" observations) are used to estimate the test error.  Since these responses were produced by trees which were not used to fit the data, this is a statistically valid way to estimate the error.
+
+
+The small class errors in the confusion matrix, the low overall out of bag error rate  and plots shown below all indicate that the random forest algorithm should give extremely valid predictions on the test data.
+
+```{r, cache=TRUE}
+rfMod
+```
+```{r, echo=FALSE, cache=TRUE}
+plot(rfMod)
+```
+
+### IV. Variable Importance
+
+One of the advantages of simple tree based methods is that there is one resulting decision tree which, perhaps after some pruning, makes it easy to determine which variables are important. In random forest multiple tree are used making it difficult to determine which variables are important. Fortunately, random forest provides a simple way to assess the importance of each predictor based on the mean decrease in accuracy and the mean decrease in the GINI coefficient due to splits over a given predictor.  The larger the value the more important the predictor.  The table below shows the mean decrease in the accuracy and GINI coefficients:
+
+```{r , cache=TRUE}
+importance(rfMod)[,c(6,7)]
+```
+We can look at this data more closely by examining the most important predictors as measured by the accuracy and GINI coefficients
+
+```{r, cache=TRUE}
+tail(sort(importance(rfMod)[,"MeanDecreaseAccuracy"]))
+tail(sort(importance(rfMod)[,"MeanDecreaseGini"]))
+```
+and then plotting the top three:
+```{r, cache=TRUE}
+varImpPlot(rfMod)
+```
+
+And we can look at the corresponding means, standard devations and quantiles of the accuracy and GINI coefficients:
+
+```{r, cache=TRUE}
+mean(importance(rfMod)[,"MeanDecreaseAccuracy"])
+sd(importance(rfMod)[,"MeanDecreaseAccuracy"])
+quantile(importance(rfMod)[,"MeanDecreaseAccuracy"])
+```
+```{r, cache=TRUE}
+mean(importance(rfMod)[,"MeanDecreaseGini"])
+sd(importance(rfMod)[,"MeanDecreaseGini"])
+quantile(importance(rfMod)[,"MeanDecreaseGini"])
+```
+
+The mean values of the accuracy and GINI coefficient expressed relative to their maximum values, `r mean(importance(rfMod)[,"MeanDecreaseAccuracy"])/max(importance(rfMod)[,"MeanDecreaseAccuracy"])` and `r mean(importance(rfMod)[,"MeanDecreaseGini"])/max(importance(rfMod)[,"MeanDecreaseGini"])` combined with the wide distribution of both the accuracy and GINI coefficients as seen from the standard deviation and quantile functions, suggest that a model with fewer predictors might do as well as the full model.  This idea is explored in section V.
+
+### V. Predictions
+
+First we test our full model, which according to our error estimates should be (and were!) very accurate
+
+```{r, cache=TRUE}
+testing<-read.csv("pml-testing.csv")
+testingFiltered<-testing[c(7,8,9,10,11,37,38,39,40,41,42,43,44,45,46,47,48,49,60,61,62,63,64,65,66,67,68,84,85,86,113,114,115,116,117,118,119,120,121,122,123,124,140,151,152,153,154,155,156,157,158,159,160)]
+rfTestPred<-predict(rfMod,newdata=testingFiltered,type="prob")
+rfTest
+```
+
+Next we test a much smaller model, using the top 3 predictors and get identical results.
+
+```{r, cache=TRUE}
+trainingTop3<-training[c(7,8,10,160)]
+testingTop3<-testing[c(7,8,10)]
+rfModTop3<-randomForest(classe~.,data=trainingTop3,mtry=2,importance=TRUE)
+rfTestTop3<-predict(rfModTop3,newdata=testingTop3)
+rfTestTop3
+```
+
+The result that the smaller model give identical results to the full model is not entirely suprising given our analysis in section IV. Although there is no sign of overfitting using the full model, by using a reduced model we get results which are more easily interpretable since we have isolated which variables are most important for predicting how well the barbell exercises are done.  
